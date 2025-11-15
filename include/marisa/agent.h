@@ -66,7 +66,6 @@ class Agent {
   bool has_state() const {
     return state_ != nullptr;
   }
-  void init_state();
 
   void clear() noexcept;
   void swap(Agent &rhs) noexcept;

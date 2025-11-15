@@ -14,8 +14,8 @@
 namespace marisa::grimoire::vector {
 
 template <typename T>
-class Vector {
- public:
+class Vector final {
+public:
   // These assertions are repeated for clarity/robustness where the property
   // is used.
   static_assert(std::is_trivially_copyable_v<T>);
@@ -25,9 +25,8 @@ class Vector {
   // `T` is trivially destructible, so default destructor is ok.
   ~Vector() = default;
 
-  Vector(const Vector<T> &other) : fixed_(other.fixed_) {
+  Vector(const Vector<T> &other) {
     if (other.buf_ == nullptr) {
-      objs_ = other.objs_;
       const_objs_ = other.const_objs_;
       size_ = other.size_;
       capacity_ = other.capacity_;
@@ -36,11 +35,31 @@ class Vector {
     }
   }
 
+  explicit Vector(Mapper &mapper) {
+    uint64_t total_size;
+    mapper.map(&total_size);
+    MARISA_THROW_IF(total_size > SIZE_MAX, std::runtime_error);
+    MARISA_THROW_IF((total_size % sizeof(T)) != 0, std::runtime_error);
+    const std::size_t size = static_cast<std::size_t>(total_size / sizeof(T));
+    mapper.map(&const_objs_, size);
+    mapper.seek(static_cast<std::size_t>((8 - (total_size % 8))));
+    size_ = size;
+  }
+
+  explicit Vector(Reader &reader) {
+    uint64_t total_size;
+    reader.read(&total_size);
+    MARISA_THROW_IF(total_size > SIZE_MAX, std::runtime_error);
+    MARISA_THROW_IF((total_size % sizeof(T)) != 0, std::runtime_error);
+    const std::size_t size = static_cast<std::size_t>(total_size / sizeof(T));
+    resize(size);
+    reader.read(objs(), size);
+    reader.seek(static_cast<std::size_t>((8 - (total_size % 8))));
+  }
+
   Vector &operator=(const Vector<T> &other) {
     clear();
-    fixed_ = other.fixed_;
     if (other.buf_ == nullptr) {
-      objs_ = other.objs_;
       const_objs_ = other.const_objs_;
       size_ = other.size_;
       capacity_ = other.capacity_;
@@ -54,31 +73,31 @@ class Vector {
   Vector &operator=(Vector<T> &&) noexcept = default;
 
   void map(Mapper &mapper) {
-    Vector temp;
-    temp.map_(mapper);
+    Vector temp(mapper);
     swap(temp);
   }
 
   void read(Reader &reader) {
-    Vector temp;
-    temp.read_(reader);
+    Vector temp(reader);
     swap(temp);
   }
 
   void write(Writer &writer) const {
-    write_(writer);
+    writer.write(static_cast<uint64_t>(total_size()));
+    writer.write(const_objs_, size_);
+    writer.seek((8 - (total_size() % 8)));
   }
 
   void push_back(const T &x) {
-    assert(!fixed_);
+    assert(!fixed());
     assert(size_ < max_size());
     reserve(size_ + 1);
-    new (&objs_[size_]) T(x);
+    new (&objs()[size_]) T(x);
     ++size_;
   }
 
   void pop_back() {
-    assert(!fixed_);
+    assert(!fixed());
     assert(size_ != 0);
     --size_;
     static_assert(std::is_trivially_destructible_v<T>);
@@ -86,10 +105,10 @@ class Vector {
 
   // resize() assumes that T's placement new does not throw an exception.
   void resize(std::size_t size) {
-    assert(!fixed_);
+    assert(!fixed());
     reserve(size);
     for (std::size_t i = size_; i < size; ++i) {
-      new (&objs_[i]) T;
+      new (&objs()[i]) T;
     }
     static_assert(std::is_trivially_destructible_v<T>);
     size_ = size;
@@ -97,10 +116,10 @@ class Vector {
 
   // resize() assumes that T's placement new does not throw an exception.
   void resize(std::size_t size, const T &x) {
-    assert(!fixed_);
+    assert(!fixed());
     reserve(size);
     if (size > size_) {
-      std::fill_n(&objs_[size_], size - size_, x);
+      std::fill_n(&objs()[size_], size - size_, x);
     }
     // No need to destroy old elements.
     static_assert(std::is_trivially_destructible_v<T>);
@@ -108,7 +127,7 @@ class Vector {
   }
 
   void reserve(std::size_t capacity) {
-    assert(!fixed_);
+    assert(!fixed());
     if (capacity <= capacity_) {
       return;
     }
@@ -125,15 +144,10 @@ class Vector {
   }
 
   void shrink() {
-    MARISA_THROW_IF(fixed_, std::logic_error);
+    MARISA_THROW_IF(fixed(), std::logic_error);
     if (size_ != capacity_) {
       realloc(size_);
     }
-  }
-
-  void fix() {
-    MARISA_THROW_IF(fixed_, std::logic_error);
-    fixed_ = true;
   }
 
   const T *begin() const {
@@ -156,27 +170,27 @@ class Vector {
   }
 
   T *begin() {
-    assert(!fixed_);
-    return objs_;
+    assert(!fixed());
+    return objs();
   }
   T *end() {
-    assert(!fixed_);
-    return objs_ + size_;
+    assert(!fixed());
+    return objs() + size_;
   }
   T &operator[](std::size_t i) {
-    assert(!fixed_);
+    assert(!fixed());
     assert(i < size_);
-    return objs_[i];
+    return objs()[i];
   }
   T &front() {
-    assert(!fixed_);
+    assert(!fixed());
     assert(size_ != 0);
-    return objs_[0];
+    return objs()[0];
   }
   T &back() {
-    assert(!fixed_);
+    assert(!fixed());
     assert(size_ != 0);
-    return objs_[size_ - 1];
+    return objs()[size_ - 1];
   }
 
   std::size_t size() const {
@@ -186,7 +200,7 @@ class Vector {
     return capacity_;
   }
   bool fixed() const {
-    return fixed_;
+    return buf_ == nullptr && const_objs_ != nullptr;
   }
 
   bool empty() const {
@@ -204,51 +218,20 @@ class Vector {
   }
   void swap(Vector &rhs) noexcept {
     buf_.swap(rhs.buf_);
-    std::swap(objs_, rhs.objs_);
     std::swap(const_objs_, rhs.const_objs_);
     std::swap(size_, rhs.size_);
     std::swap(capacity_, rhs.capacity_);
-    std::swap(fixed_, rhs.fixed_);
   }
 
   static std::size_t max_size() {
     return SIZE_MAX / sizeof(T);
   }
 
- private:
+private:
   std::unique_ptr<char[]> buf_;
-  T *objs_ = nullptr;
   const T *const_objs_ = nullptr;
   std::size_t size_ = 0;
   std::size_t capacity_ = 0;
-  bool fixed_ = false;
-
-  void map_(Mapper &mapper) {
-    uint64_t total_size;
-    mapper.map(&total_size);
-    MARISA_THROW_IF(total_size > SIZE_MAX, std::runtime_error);
-    MARISA_THROW_IF((total_size % sizeof(T)) != 0, std::runtime_error);
-    const std::size_t size = static_cast<std::size_t>(total_size / sizeof(T));
-    mapper.map(&const_objs_, size);
-    mapper.seek(static_cast<std::size_t>((8 - (total_size % 8)) % 8));
-    size_ = size;
-    fix();
-  }
-  void read_(Reader &reader) {
-    uint64_t total_size;
-    reader.read(&total_size);
-    MARISA_THROW_IF(total_size > SIZE_MAX, std::runtime_error);
-    MARISA_THROW_IF((total_size % sizeof(T)) != 0, std::runtime_error);
-    const std::size_t size = static_cast<std::size_t>(total_size / sizeof(T));
-    resize(size);
-    reader.read(objs_, size);
-    reader.seek(static_cast<std::size_t>((8 - (total_size % 8)) % 8));
-  }
-  void write_(Writer &writer) const {
-    writer.write(static_cast<uint64_t>(total_size()));
-    writer.write(const_objs_, size_);
-    writer.seek((8 - (total_size() % 8)) % 8);
-  }
 
   // Copies current elements to new buffer of size `new_capacity`.
   // Requires `new_capacity >= size_`.
@@ -259,28 +242,29 @@ class Vector {
     std::unique_ptr<char[]> new_buf(new char[sizeof(T) * new_capacity]);
     T *new_objs = reinterpret_cast<T *>(new_buf.get());
 
-    static_assert(std::is_trivially_copyable_v<T>);
-    std::memcpy(new_objs, objs_, sizeof(T) * size_);
+    std::copy_n(objs(), size_, new_objs);
+    std::memset(&new_objs[size_], 0, (new_capacity - size_) * sizeof(T));
 
     buf_ = std::move(new_buf);
-    objs_ = new_objs;
     const_objs_ = new_objs;
     capacity_ = new_capacity;
   }
 
-  // copyInit() assumes that T's placement new does not throw an exception.
+  T *objs() {
+    return reinterpret_cast<T*>(buf_.get());
+  }
+
+  // Initializes this vector with a copy of the given data.
   // Requires the vector to be empty.
   void copyInit(const T *src, std::size_t size, std::size_t capacity) {
     assert(size_ == 0);
 
-    std::unique_ptr<char[]> new_buf(new char[sizeof(T) * capacity]);
-    T *new_objs = reinterpret_cast<T *>(new_buf.get());
+    buf_ = std::unique_ptr<char[]>(new char[sizeof(T) * capacity]);
+    T *new_objs = objs();
 
-    static_assert(std::is_trivially_copyable_v<T>);
-    std::memcpy(new_objs, src, sizeof(T) * size);
+    std::copy_n(src, size, new_objs);
+    std::memset(&new_objs[size_], 0, (capacity - size_) * sizeof(T));
 
-    buf_ = std::move(new_buf);
-    objs_ = new_objs;
     const_objs_ = new_objs;
     size_ = size;
     capacity_ = capacity;

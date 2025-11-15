@@ -8,11 +8,62 @@
 
 namespace marisa::grimoire::trie {
 
-Tail::Tail() = default;
+Tail::Tail(Vector<Entry> &entries, Vector<uint32_t> &offsets, TailMode mode) {
+  for (std::size_t i = 0; i < entries.size(); ++i) {
+    entries[i].set_id(i);
+  }
+  algorithm::sort(entries.begin(), entries.end());
 
-void Tail::build(Vector<Entry> &entries, Vector<uint32_t> *offsets,
+  Vector<uint32_t> temp_offsets;
+  temp_offsets.resize(entries.size(), 0);
+
+  const Entry dummy;
+  const Entry *last = &dummy;
+  for (std::size_t i = entries.size(); i > 0; --i) {
+    const Entry &current = entries[i - 1];
+    MARISA_THROW_IF(current.length() == 0, std::out_of_range);
+    std::size_t match = 0;
+    while ((match < current.length()) && (match < last->length()) &&
+           ((*last)[match] == current[match])) {
+      ++match;
+           }
+    if ((match == current.length()) && (last->length() != 0)) {
+      temp_offsets[current.id()] = static_cast<uint32_t>(
+          temp_offsets[last->id()] + (last->length() - match));
+    } else {
+      temp_offsets[current.id()] = static_cast<uint32_t>(buf_.size());
+      for (std::size_t j = 1; j <= current.length(); ++j) {
+        buf_.push_back(current[current.length() - j]);
+      }
+      if (mode == MARISA_TEXT_TAIL) {
+        buf_.push_back('\0');
+      } else {
+        for (std::size_t j = 1; j < current.length(); ++j) {
+          end_flags_.push_back(false);
+        }
+        end_flags_.push_back(true);
+      }
+      MARISA_THROW_IF(buf_.size() > UINT32_MAX, std::length_error);
+    }
+    last = &current;
+  }
+  buf_.shrink();
+
+  offsets = std::move(temp_offsets);
+}
+
+Tail::Tail(Mapper &mapper) {
+  buf_.map(mapper);
+  end_flags_.map(mapper);
+}
+
+Tail::Tail(Reader &reader) {
+  buf_.read(reader);
+  end_flags_.read(reader);
+}
+
+void Tail::build(Vector<Entry> &entries, Vector<uint32_t> &offsets,
                  TailMode mode) {
-  MARISA_THROW_IF(offsets == nullptr, std::invalid_argument);
 
   switch (mode) {
     case MARISA_TEXT_TAIL: {
@@ -39,20 +90,17 @@ void Tail::build(Vector<Entry> &entries, Vector<uint32_t> *offsets,
     }
   }
 
-  Tail temp;
-  temp.build_(entries, offsets, mode);
+  Tail temp(entries, offsets, mode);
   swap(temp);
 }
 
 void Tail::map(Mapper &mapper) {
-  Tail temp;
-  temp.map_(mapper);
+  Tail temp(mapper);
   swap(temp);
 }
 
 void Tail::read(Reader &reader) {
-  Tail temp;
-  temp.read_(reader);
+  Tail temp(reader);
   swap(temp);
 }
 
@@ -152,61 +200,6 @@ void Tail::clear() noexcept {
 void Tail::swap(Tail &rhs) noexcept {
   buf_.swap(rhs.buf_);
   end_flags_.swap(rhs.end_flags_);
-}
-
-void Tail::build_(Vector<Entry> &entries, Vector<uint32_t> *offsets,
-                  TailMode mode) {
-  for (std::size_t i = 0; i < entries.size(); ++i) {
-    entries[i].set_id(i);
-  }
-  algorithm::sort(entries.begin(), entries.end());
-
-  Vector<uint32_t> temp_offsets;
-  temp_offsets.resize(entries.size(), 0);
-
-  const Entry dummy;
-  const Entry *last = &dummy;
-  for (std::size_t i = entries.size(); i > 0; --i) {
-    const Entry &current = entries[i - 1];
-    MARISA_THROW_IF(current.length() == 0, std::out_of_range);
-    std::size_t match = 0;
-    while ((match < current.length()) && (match < last->length()) &&
-           ((*last)[match] == current[match])) {
-      ++match;
-    }
-    if ((match == current.length()) && (last->length() != 0)) {
-      temp_offsets[current.id()] = static_cast<uint32_t>(
-          temp_offsets[last->id()] + (last->length() - match));
-    } else {
-      temp_offsets[current.id()] = static_cast<uint32_t>(buf_.size());
-      for (std::size_t j = 1; j <= current.length(); ++j) {
-        buf_.push_back(current[current.length() - j]);
-      }
-      if (mode == MARISA_TEXT_TAIL) {
-        buf_.push_back('\0');
-      } else {
-        for (std::size_t j = 1; j < current.length(); ++j) {
-          end_flags_.push_back(false);
-        }
-        end_flags_.push_back(true);
-      }
-      MARISA_THROW_IF(buf_.size() > UINT32_MAX, std::length_error);
-    }
-    last = &current;
-  }
-  buf_.shrink();
-
-  offsets->swap(temp_offsets);
-}
-
-void Tail::map_(Mapper &mapper) {
-  buf_.map(mapper);
-  end_flags_.map(mapper);
-}
-
-void Tail::read_(Reader &reader) {
-  buf_.read(reader);
-  end_flags_.read(reader);
 }
 
 void Tail::write_(Writer &writer) const {

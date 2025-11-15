@@ -150,15 +150,15 @@ void Trie::build(Keyset &keyset, int config_flags) {
 }
 
 void Trie::mmap(const char *filename, int flags) {
-  trie_->mmap(filename, flags);
+  marisa::TrieSerializer(*trie_).mmap(filename, flags);
 }
 
 void Trie::load(const char *filename) {
-  trie_->load(filename);
+  marisa::TrieSerializer(*trie_).load(filename);
 }
 
 void Trie::save(const char *filename) const {
-  trie_->save(filename);
+  marisa::TrieSerializer(*trie_).save(filename);
 }
 
 bool Trie::lookup(Agent &agent) const {
@@ -180,10 +180,8 @@ bool Trie::predictive_search(Agent &agent) const {
 size_t Trie::lookup(const char *ptr, size_t length) const {
   marisa::Agent agent;
   agent.set_query(ptr, length);
-  if (!trie_->lookup(agent)) {
-    return MARISA_INVALID_KEY_ID;
-  }
-  return agent.key().id();
+  return trie_->lookup(agent) ? agent.key().id()
+                                  : MARISA_INVALID_KEY_ID;
 }
 
 void Trie::reverse_lookup(size_t id,

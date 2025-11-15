@@ -15,16 +15,13 @@ namespace marisa::grimoire::trie {
 
 LoudsTrie::LoudsTrie() = default;
 
-LoudsTrie::~LoudsTrie() = default;
-
-void LoudsTrie::build(Keyset &keyset, int flags) {
-  Config config;
-  config.parse(flags);
-
+LoudsTrie::LoudsTrie(Keyset &keyset, int flags) {
   LoudsTrie temp;
-  temp.build_(keyset, config);
+  temp.build_(keyset, Config(flags));
   swap(temp);
 }
+
+LoudsTrie::~LoudsTrie() = default;
 
 void LoudsTrie::map(Mapper &mapper) {
   Header().map(mapper);
@@ -253,7 +250,7 @@ void LoudsTrie::build_(Keyset &keyset, const Config &config) {
   }
 
   Vector<uint32_t> terminals;
-  build_trie(keys, &terminals, config, 1);
+  build_trie(keys, terminals, config, 1);
 
   using TerminalIdPair = std::pair<uint32_t, uint32_t>;
   const std::size_t pairs_size = terminals.size();
@@ -289,22 +286,21 @@ void LoudsTrie::build_(Keyset &keyset, const Config &config) {
 }
 
 template <typename T>
-void LoudsTrie::build_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
+void LoudsTrie::build_trie(Vector<T> &keys, Vector<uint32_t> &terminals,
                            const Config &config, std::size_t trie_id) {
   build_current_trie(keys, terminals, config, trie_id);
 
   Vector<uint32_t> next_terminals;
   if (!keys.empty()) {
-    build_next_trie(keys, &next_terminals, config, trie_id);
+    build_next_trie(keys, next_terminals, config, trie_id);
   }
 
-  if (next_trie_ != nullptr) {
-    config_.parse(static_cast<int>((next_trie_->num_tries() + 1)) |
-                  next_trie_->tail_mode() | next_trie_->node_order());
-  } else {
-    config_.parse(1 | tail_.mode() | config.node_order() |
-                  config.cache_level());
-  }
+  int flags = (next_trie_ != nullptr)
+                ? static_cast<int>((next_trie_->num_tries() + 1)) |
+                  next_trie_->tail_mode() | next_trie_->node_order()
+                : 1 | tail_.mode() | config.node_order() |
+                  config.cache_level();
+  config_.parse(flags);
 
   link_flags_.build(false, false);
   std::size_t node_id = 0;
@@ -321,7 +317,7 @@ void LoudsTrie::build_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
 }
 
 template <typename T>
-void LoudsTrie::build_current_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
+void LoudsTrie::build_current_trie(Vector<T> &keys, Vector<uint32_t> &terminals,
                                    const Config &config, std::size_t trie_id) {
   for (std::size_t i = 0; i < keys.size(); ++i) {
     keys[i].set_id(i);
@@ -423,11 +419,11 @@ void LoudsTrie::build_current_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
   bases_.shrink();
 
   build_terminals(keys, terminals);
-  keys.swap(next_keys);
+  keys = std::move(next_keys);
 }
 
 template <>
-void LoudsTrie::build_next_trie(Vector<Key> &keys, Vector<uint32_t> *terminals,
+void LoudsTrie::build_next_trie(Vector<Key> &keys, Vector<uint32_t> &terminals,
                                 const Config &config, std::size_t trie_id) {
   if (trie_id == config.num_tries()) {
     Vector<Entry> entries;
@@ -451,7 +447,7 @@ void LoudsTrie::build_next_trie(Vector<Key> &keys, Vector<uint32_t> *terminals,
 
 template <>
 void LoudsTrie::build_next_trie(Vector<ReverseKey> &keys,
-                                Vector<uint32_t> *terminals,
+                                Vector<uint32_t> &terminals,
                                 const Config &config, std::size_t trie_id) {
   if (trie_id == config.num_tries()) {
     Vector<Entry> entries;
@@ -468,13 +464,13 @@ void LoudsTrie::build_next_trie(Vector<ReverseKey> &keys,
 
 template <typename T>
 void LoudsTrie::build_terminals(const Vector<T> &keys,
-                                Vector<uint32_t> *terminals) const {
+                                Vector<uint32_t> &terminals) const {
   Vector<uint32_t> temp;
   temp.resize(keys.size());
   for (std::size_t i = 0; i < keys.size(); ++i) {
     temp[keys[i].id()] = static_cast<uint32_t>(keys[i].terminal());
   }
-  terminals->swap(temp);
+  terminals.swap(temp);
 }
 
 template <>
@@ -482,11 +478,11 @@ void LoudsTrie::cache<Key>(std::size_t parent, std::size_t child, float weight,
                            char label) {
   assert(parent < child);
 
-  const std::size_t cache_id = get_cache_id(parent, label);
-  if (weight > cache_[cache_id].weight()) {
-    cache_[cache_id].set_parent(parent);
-    cache_[cache_id].set_child(child);
-    cache_[cache_id].set_weight(weight);
+  auto &cache = cache_[get_cache_id(parent, label)];
+  if (weight > cache.weight()) {
+    cache.set_parent(parent);
+    cache.set_child(child);
+    cache.set_weight(weight);
   }
 }
 
@@ -505,11 +501,11 @@ void LoudsTrie::cache<ReverseKey>(std::size_t parent, std::size_t child,
                                   float weight, char) {
   assert(parent < child);
 
-  const std::size_t cache_id = get_cache_id(child);
-  if (weight > cache_[cache_id].weight()) {
-    cache_[cache_id].set_parent(parent);
-    cache_[cache_id].set_child(child);
-    cache_[cache_id].set_weight(weight);
+  auto &cache = cache_[get_cache_id(child)];
+  if (weight > cache.weight()) {
+    cache.set_parent(parent);
+    cache.set_child(child);
+    cache.set_weight(weight);
   }
 }
 

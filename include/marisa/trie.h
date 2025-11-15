@@ -13,10 +13,13 @@ class LoudsTrie;
 
 }  // namespace grimoire::trie
 
+class TrieSerializer;
+
 class Trie {
   friend class TrieIO;
+  friend class TrieSerializer;
 
- public:
+public:
   Trie();
   ~Trie();
 
@@ -27,15 +30,6 @@ class Trie {
   Trie &operator=(Trie &&) noexcept;
 
   void build(Keyset &keyset, int config_flags = 0);
-
-  void mmap(const char *filename, int flags = 0);
-  void map(const void *ptr, std::size_t size);
-
-  void load(const char *filename);
-  void read(int fd);
-
-  void save(const char *filename) const;
-  void write(int fd) const;
 
   bool lookup(Agent &agent) const;
   void reverse_lookup(Agent &agent) const;
@@ -57,8 +51,26 @@ class Trie {
   void clear() noexcept;
   void swap(Trie &rhs) noexcept;
 
- private:
+private:
   std::unique_ptr<grimoire::trie::LoudsTrie> trie_;
+};
+
+class TrieSerializer {
+public:
+  explicit TrieSerializer(Trie& trie)
+    : trie_(trie) {}
+
+  void mmap(const char *filename, int flags = 0);
+  void map(const void *ptr, std::size_t size);
+
+  void load(const char *filename);
+  void read(int fd);
+
+  void save(const char *filename) const;
+  void write(int fd) const;
+
+private:
+  Trie& trie_;
 };
 
 }  // namespace marisa

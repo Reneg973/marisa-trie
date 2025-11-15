@@ -8,7 +8,22 @@
 
 namespace marisa {
 
-Keyset::Keyset() = default;
+
+template<typename T>
+void append_(std::unique_ptr<std::unique_ptr<T[]>[]> &blocks,
+              std::size_t &blocks_size, std::size_t &blocks_capacity) {
+  if (blocks_size != blocks_capacity)
+    return;
+
+  const std::size_t new_capacity = blocks_size ? (blocks_size * 2) : 1;
+  std::unique_ptr<std::unique_ptr<T[]>[]> new_blocks(
+      new std::unique_ptr<T[]>[new_capacity]);
+  for (std::size_t i = 0; i < blocks_size; ++i) {
+    blocks[i].swap(new_blocks[i]);
+  }
+  blocks.swap(new_blocks);
+  blocks_capacity = new_capacity;
+}
 
 void Keyset::push_back(const Key &key) {
   assert(size_ < SIZE_MAX);
@@ -26,10 +41,6 @@ void Keyset::push_back(const Key &key) {
 void Keyset::push_back(const Key &key, char end_marker) {
   assert(size_ < SIZE_MAX);
 
-  if ((size_ / KEY_BLOCK_SIZE) == key_blocks_size_) {
-    append_key_block();
-  }
-
   char *const key_ptr = reserve(key.length() + 1);
   std::memcpy(key_ptr, key.ptr(), key.length());
   key_ptr[key.length()] = end_marker;
@@ -45,11 +56,7 @@ void Keyset::push_back(const char *str) {
   assert(size_ < SIZE_MAX);
   MARISA_THROW_IF(str == nullptr, std::invalid_argument);
 
-  std::size_t length = 0;
-  while (str[length] != '\0') {
-    ++length;
-  }
-  push_back(str, length);
+  push_back(str, std::find(str, str + SIZE_MAX, '\0') - str);
 }
 
 void Keyset::push_back(const char *ptr, std::size_t length, float weight) {
@@ -65,15 +72,6 @@ void Keyset::push_back(const char *ptr, std::size_t length, float weight) {
   key.set_weight(weight);
   ++size_;
   total_length_ += length;
-}
-
-void Keyset::reset() {
-  base_blocks_size_ = 0;
-  extra_blocks_size_ = 0;
-  ptr_ = nullptr;
-  avail_ = 0;
-  size_ = 0;
-  total_length_ = 0;
 }
 
 void Keyset::clear() noexcept {
@@ -114,53 +112,21 @@ char *Keyset::reserve(std::size_t size) {
 }
 
 void Keyset::append_base_block() {
-  if (base_blocks_size_ == base_blocks_capacity_) {
-    const std::size_t new_capacity =
-        (base_blocks_size_ != 0) ? (base_blocks_size_ * 2) : 1;
-    std::unique_ptr<std::unique_ptr<char[]>[]> new_blocks(
-        new std::unique_ptr<char[]>[new_capacity]);
-    for (std::size_t i = 0; i < base_blocks_size_; ++i) {
-      base_blocks_[i].swap(new_blocks[i]);
-    }
-    base_blocks_.swap(new_blocks);
-    base_blocks_capacity_ = new_capacity;
-  }
+  append_(base_blocks_, base_blocks_size_, base_blocks_capacity_);
   if (base_blocks_[base_blocks_size_] == nullptr) {
-    std::unique_ptr<char[]> new_block(new char[BASE_BLOCK_SIZE]);
-    base_blocks_[base_blocks_size_].swap(new_block);
+    base_blocks_[base_blocks_size_].reset(new char[BASE_BLOCK_SIZE]);
   }
   ptr_ = base_blocks_[base_blocks_size_++].get();
   avail_ = BASE_BLOCK_SIZE;
 }
 
 void Keyset::append_extra_block(std::size_t size) {
-  if (extra_blocks_size_ == extra_blocks_capacity_) {
-    const std::size_t new_capacity =
-        (extra_blocks_size_ != 0) ? (extra_blocks_size_ * 2) : 1;
-    std::unique_ptr<std::unique_ptr<char[]>[]> new_blocks(
-        new std::unique_ptr<char[]>[new_capacity]);
-    for (std::size_t i = 0; i < extra_blocks_size_; ++i) {
-      extra_blocks_[i].swap(new_blocks[i]);
-    }
-    extra_blocks_.swap(new_blocks);
-    extra_blocks_capacity_ = new_capacity;
-  }
-  std::unique_ptr<char[]> new_block(new char[size]);
-  extra_blocks_[extra_blocks_size_++].swap(new_block);
+  append_(extra_blocks_, extra_blocks_size_, extra_blocks_capacity_);
+  extra_blocks_[extra_blocks_size_++].reset(new char[size]);
 }
 
 void Keyset::append_key_block() {
-  if (key_blocks_size_ == key_blocks_capacity_) {
-    const std::size_t new_capacity =
-        (key_blocks_size_ != 0) ? (key_blocks_size_ * 2) : 1;
-    std::unique_ptr<std::unique_ptr<Key[]>[]> new_blocks(
-        new std::unique_ptr<Key[]>[new_capacity]);
-    for (std::size_t i = 0; i < key_blocks_size_; ++i) {
-      key_blocks_[i].swap(new_blocks[i]);
-    }
-    key_blocks_.swap(new_blocks);
-    key_blocks_capacity_ = new_capacity;
-  }
+  append_(key_blocks_, key_blocks_size_, key_blocks_capacity_);
   std::unique_ptr<Key[]> new_block(new Key[KEY_BLOCK_SIZE]);
   key_blocks_[key_blocks_size_++].swap(new_block);
 }

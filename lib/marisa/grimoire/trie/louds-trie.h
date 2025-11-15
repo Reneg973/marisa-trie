@@ -16,12 +16,11 @@ namespace marisa::grimoire::trie {
 class LoudsTrie {
  public:
   LoudsTrie();
+  LoudsTrie(Keyset &keyset, int flags);
   ~LoudsTrie();
 
   LoudsTrie(const LoudsTrie &) = delete;
   LoudsTrie &operator=(const LoudsTrie &) = delete;
-
-  void build(Keyset &keyset, int flags);
 
   void map(Mapper &mapper);
   void read(Reader &reader);
@@ -73,25 +72,25 @@ class LoudsTrie {
   Tail tail_;
   std::unique_ptr<LoudsTrie> next_trie_;
   Vector<Cache> cache_;
+  Mapper mapper_;
   std::size_t cache_mask_ = 0;
   std::size_t num_l1_nodes_ = 0;
   Config config_;
-  Mapper mapper_;
 
   void build_(Keyset &keyset, const Config &config);
 
   template <typename T>
-  void build_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
+  void build_trie(Vector<T> &keys, Vector<uint32_t> &terminals,
                   const Config &config, std::size_t trie_id);
   template <typename T>
-  void build_current_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
+  void build_current_trie(Vector<T> &keys, Vector<uint32_t> &terminals,
                           const Config &config, std::size_t trie_id);
   template <typename T>
-  void build_next_trie(Vector<T> &keys, Vector<uint32_t> *terminals,
+  void build_next_trie(Vector<T> &keys, Vector<uint32_t> &terminals,
                        const Config &config, std::size_t trie_id);
   template <typename T>
   void build_terminals(const Vector<T> &keys,
-                       Vector<uint32_t> *terminals) const;
+                       Vector<uint32_t> &terminals) const;
 
   void reserve_cache(const Config &config, std::size_t trie_id,
                      std::size_t num_keys);

@@ -9,7 +9,7 @@
 namespace marisa {
 
 class Query {
- public:
+public:
   Query() = default;
   Query(const Query &query) = default;
 
@@ -63,7 +63,7 @@ class Query {
     std::swap(id_, rhs.id_);
   }
 
- private:
+private:
   const char *ptr_ = nullptr;
   std::size_t length_ = 0;
   std::size_t id_ = 0;

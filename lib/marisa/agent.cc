@@ -29,7 +29,9 @@ void UpdateAgentAfterCopyingState(const grimoire::trie::State &state,
 }
 }  // namespace
 
-Agent::Agent() = default;
+Agent::Agent()
+  :  state_(new grimoire::State) {
+}
 
 Agent::~Agent() = default;
 
@@ -78,11 +80,6 @@ void Agent::set_query(std::size_t key_id) {
     state_->reset();
   }
   query_.set_id(key_id);
-}
-
-void Agent::init_state() {
-  MARISA_THROW_IF(state_ != nullptr, std::logic_error);
-  state_.reset(new grimoire::State);
 }
 
 void Agent::clear() noexcept {

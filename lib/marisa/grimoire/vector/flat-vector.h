@@ -17,24 +17,101 @@ class FlatVector {
 #endif  // MARISA_WORD_SIZE == 64
 
   FlatVector() = default;
+  explicit FlatVector(const Vector<uint32_t> &values) {
+    uint32_t max_value = 0;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      if (values[i] > max_value) {
+        max_value = values[i];
+      }
+    }
+
+    std::size_t value_size = 0;
+    while (max_value != 0) {
+      ++value_size;
+      max_value >>= 1;
+    }
+
+    std::size_t num_units = values.empty() ? 0 : (64 / MARISA_WORD_SIZE);
+    if (value_size != 0) {
+      num_units = static_cast<std::size_t>(
+          ((static_cast<uint64_t>(value_size) * values.size()) +
+           (MARISA_WORD_SIZE - 1)) /
+          MARISA_WORD_SIZE);
+      num_units += num_units % (64 / MARISA_WORD_SIZE);
+    }
+
+    units_.resize(num_units);
+    if (num_units > 0) {
+      units_.back() = 0;
+    }
+
+    value_size_ = value_size;
+    if (value_size != 0) {
+      mask_ = UINT32_MAX >> (32 - value_size);
+    }
+    size_ = values.size();
+
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      set(i, values[i]);
+    }
+  }
+
+  explicit FlatVector(Mapper &mapper) {
+    units_.map(mapper);
+    {
+      uint32_t temp_value_size;
+      mapper.map(&temp_value_size);
+      MARISA_THROW_IF(temp_value_size > 32, std::runtime_error);
+      value_size_ = temp_value_size;
+    }
+    {
+      uint32_t temp_mask;
+      mapper.map(&temp_mask);
+      mask_ = temp_mask;
+    }
+    {
+      uint64_t temp_size;
+      mapper.map(&temp_size);
+      MARISA_THROW_IF(temp_size > SIZE_MAX, std::runtime_error);
+      size_ = static_cast<std::size_t>(temp_size);
+    }
+  }
+
+  explicit FlatVector(Reader &reader) {
+    units_.read(reader);
+    {
+      uint32_t temp_value_size;
+      reader.read(&temp_value_size);
+      MARISA_THROW_IF(temp_value_size > 32, std::runtime_error);
+      value_size_ = temp_value_size;
+    }
+    {
+      uint32_t temp_mask;
+      reader.read(&temp_mask);
+      mask_ = temp_mask;
+    }
+    {
+      uint64_t temp_size;
+      reader.read(&temp_size);
+      MARISA_THROW_IF(temp_size > SIZE_MAX, std::runtime_error);
+      size_ = static_cast<std::size_t>(temp_size);
+    }
+  }
 
   FlatVector(const FlatVector &) = delete;
   FlatVector &operator=(const FlatVector &) = delete;
 
   void build(const Vector<uint32_t> &values) {
-    FlatVector temp;
-    temp.build_(values);
+    FlatVector temp(values);
     swap(temp);
   }
 
   void map(Mapper &mapper) {
-    FlatVector temp;
-    temp.map_(mapper);
+    FlatVector temp(mapper);
     swap(temp);
   }
   void read(Reader &reader) {
-    FlatVector temp;
-    temp.read_(reader);
+    FlatVector temp(reader);
     swap(temp);
   }
   void write(Writer &writer) const {
@@ -88,92 +165,11 @@ class FlatVector {
     std::swap(size_, rhs.size_);
   }
 
- private:
+private:
   Vector<Unit> units_;
   std::size_t value_size_ = 0;
   uint32_t mask_ = 0;
   std::size_t size_ = 0;
-
-  void build_(const Vector<uint32_t> &values) {
-    uint32_t max_value = 0;
-    for (std::size_t i = 0; i < values.size(); ++i) {
-      if (values[i] > max_value) {
-        max_value = values[i];
-      }
-    }
-
-    std::size_t value_size = 0;
-    while (max_value != 0) {
-      ++value_size;
-      max_value >>= 1;
-    }
-
-    std::size_t num_units = values.empty() ? 0 : (64 / MARISA_WORD_SIZE);
-    if (value_size != 0) {
-      num_units = static_cast<std::size_t>(
-          ((static_cast<uint64_t>(value_size) * values.size()) +
-           (MARISA_WORD_SIZE - 1)) /
-          MARISA_WORD_SIZE);
-      num_units += num_units % (64 / MARISA_WORD_SIZE);
-    }
-
-    units_.resize(num_units);
-    if (num_units > 0) {
-      units_.back() = 0;
-    }
-
-    value_size_ = value_size;
-    if (value_size != 0) {
-      mask_ = UINT32_MAX >> (32 - value_size);
-    }
-    size_ = values.size();
-
-    for (std::size_t i = 0; i < values.size(); ++i) {
-      set(i, values[i]);
-    }
-  }
-
-  void map_(Mapper &mapper) {
-    units_.map(mapper);
-    {
-      uint32_t temp_value_size;
-      mapper.map(&temp_value_size);
-      MARISA_THROW_IF(temp_value_size > 32, std::runtime_error);
-      value_size_ = temp_value_size;
-    }
-    {
-      uint32_t temp_mask;
-      mapper.map(&temp_mask);
-      mask_ = temp_mask;
-    }
-    {
-      uint64_t temp_size;
-      mapper.map(&temp_size);
-      MARISA_THROW_IF(temp_size > SIZE_MAX, std::runtime_error);
-      size_ = static_cast<std::size_t>(temp_size);
-    }
-  }
-
-  void read_(Reader &reader) {
-    units_.read(reader);
-    {
-      uint32_t temp_value_size;
-      reader.read(&temp_value_size);
-      MARISA_THROW_IF(temp_value_size > 32, std::runtime_error);
-      value_size_ = temp_value_size;
-    }
-    {
-      uint32_t temp_mask;
-      reader.read(&temp_mask);
-      mask_ = temp_mask;
-    }
-    {
-      uint64_t temp_size;
-      reader.read(&temp_size);
-      MARISA_THROW_IF(temp_size > SIZE_MAX, std::runtime_error);
-      size_ = static_cast<std::size_t>(temp_size);
-    }
-  }
 
   void write_(Writer &writer) const {
     units_.write(writer);

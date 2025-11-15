@@ -18,6 +18,42 @@ class BitVector {
 #endif  // MARISA_WORD_SIZE == 64
 
   BitVector() = default;
+  explicit BitVector(Mapper &mapper) {
+    units_.map(mapper);
+    {
+      uint32_t temp_size;
+      mapper.map(&temp_size);
+      size_ = temp_size;
+    }
+    {
+      uint32_t temp_num_1s;
+      mapper.map(&temp_num_1s);
+      MARISA_THROW_IF(temp_num_1s > size_, std::runtime_error);
+      num_1s_ = temp_num_1s;
+    }
+    ranks_.map(mapper);
+    select0s_.map(mapper);
+    select1s_.map(mapper);
+  }
+
+  explicit BitVector(Reader &reader) {
+    units_.read(reader);
+    {
+      uint32_t temp_size;
+      reader.read(&temp_size);
+      size_ = temp_size;
+    }
+    {
+      uint32_t temp_num_1s;
+      reader.read(&temp_num_1s);
+      MARISA_THROW_IF(temp_num_1s > size_, std::runtime_error);
+      num_1s_ = temp_num_1s;
+    }
+    ranks_.read(reader);
+    select0s_.read(reader);
+    select1s_.read(reader);
+  }
+
 
   BitVector(const BitVector &) = delete;
   BitVector &operator=(const BitVector &) = delete;
@@ -31,13 +67,11 @@ class BitVector {
   }
 
   void map(Mapper &mapper) {
-    BitVector temp;
-    temp.map_(mapper);
+    BitVector temp(mapper);
     swap(temp);
   }
   void read(Reader &reader) {
-    BitVector temp;
-    temp.read_(reader);
+    BitVector temp(reader);
     swap(temp);
   }
   void write(Writer &writer) const {
@@ -123,42 +157,6 @@ class BitVector {
 
   void build_index(const BitVector &bv, bool enables_select0,
                    bool enables_select1);
-
-  void map_(Mapper &mapper) {
-    units_.map(mapper);
-    {
-      uint32_t temp_size;
-      mapper.map(&temp_size);
-      size_ = temp_size;
-    }
-    {
-      uint32_t temp_num_1s;
-      mapper.map(&temp_num_1s);
-      MARISA_THROW_IF(temp_num_1s > size_, std::runtime_error);
-      num_1s_ = temp_num_1s;
-    }
-    ranks_.map(mapper);
-    select0s_.map(mapper);
-    select1s_.map(mapper);
-  }
-
-  void read_(Reader &reader) {
-    units_.read(reader);
-    {
-      uint32_t temp_size;
-      reader.read(&temp_size);
-      size_ = temp_size;
-    }
-    {
-      uint32_t temp_num_1s;
-      reader.read(&temp_num_1s);
-      MARISA_THROW_IF(temp_num_1s > size_, std::runtime_error);
-      num_1s_ = temp_num_1s;
-    }
-    ranks_.read(reader);
-    select0s_.read(reader);
-    select1s_.read(reader);
-  }
 
   void write_(Writer &writer) const {
     units_.write(writer);

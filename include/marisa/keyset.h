@@ -9,15 +9,15 @@
 
 namespace marisa {
 
-class Keyset {
- public:
+class Keyset final {
+public:
   enum {
     BASE_BLOCK_SIZE = 4096,
     EXTRA_BLOCK_SIZE = 1024,
     KEY_BLOCK_SIZE = 256
   };
 
-  Keyset();
+  Keyset() = default;
 
   Keyset(const Keyset &) = delete;
   Keyset &operator=(const Keyset &) = delete;
@@ -54,12 +54,10 @@ class Keyset {
     return total_length_;
   }
 
-  void reset();
-
   void clear() noexcept;
   void swap(Keyset &rhs) noexcept;
 
- private:
+private:
   std::unique_ptr<std::unique_ptr<char[]>[]> base_blocks_;
   std::size_t base_blocks_size_ = 0;
   std::size_t base_blocks_capacity_ = 0;
